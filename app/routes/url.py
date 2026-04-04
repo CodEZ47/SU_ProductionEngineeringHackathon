@@ -1,15 +1,13 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, redirect
 from datetime import datetime
 import random
 import string
+import json
 from urllib.parse import urlparse
 
 from app.models.url import URL
 from app.models.user import User
 from app.models.event import Event
-
-from flask import redirect
-
 
 url_bp = Blueprint("url", __name__)
 
@@ -31,7 +29,6 @@ def is_valid_url(url):
 
     url = url.strip()
 
-    # MUST start with http/https
     if not (url.startswith("http://") or url.startswith("https://")):
         return False
 
@@ -42,11 +39,24 @@ def is_valid_url(url):
         return False
 
 
+def serialize_url(url):
+    return {
+        "id": url.id,
+        "user_id": url.user.id,
+        "short_code": url.short_code,
+        "original_url": url.original_url,
+        "title": url.title,
+        "is_active": url.is_active,
+        "created_at": url.created_at.isoformat(),
+        "updated_at": url.updated_at.isoformat(),
+    }
+
+
+# ------------------ CREATE ------------------
+
 @url_bp.route("/urls", methods=["POST"])
 def create_url():
     data = request.get_json(force=True, silent=True)
-
-
 
     if not data:
         return jsonify({"error": "Invalid JSON body"}), 400
@@ -54,8 +64,6 @@ def create_url():
     user_id = data.get("user_id")
     original_url = data.get("original_url")
     title = data.get("title")
-
-    print("original_url:", original_url)  # debug
 
     if user_id is None or original_url is None:
         return jsonify({"error": "user_id and original_url are required"}), 400
@@ -70,6 +78,7 @@ def create_url():
         return jsonify({"error": "title must be a string"}), 400
 
     original_url = original_url.strip()
+
     if original_url == "":
         return jsonify({"error": "original_url cannot be empty"}), 400
 
@@ -102,39 +111,29 @@ def create_url():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+    # Event logging (non-blocking)
     try:
         Event.create(
             user=user,
             url=new_url,
             event_type="created",
             timestamp=now,
-            details={
+            details=json.dumps({
                 "short_code": code,
                 "original_url": original_url
-            }
+            })
         )
     except Exception as e:
         print("Event logging failed:", e)
 
-    return jsonify({
-        "id": new_url.id,
-        "user_id": new_url.user.id,
-        "short_code": new_url.short_code,
-        "original_url": new_url.original_url,
-        "title": new_url.title,
-        "is_active": new_url.is_active,
-        "created_at": new_url.created_at.isoformat(),
-        "updated_at": new_url.updated_at.isoformat(),
-    }), 201
+    return jsonify(serialize_url(new_url)), 201
 
 
+# ------------------ LIST ------------------
 
 @url_bp.route("/urls", methods=["GET"])
 def list_urls():
     user_id = request.args.get("user_id")
-    is_active = request.args.get("is_active")
-    short_code = request.args.get("short_code")
-
     query = URL.select()
 
     if user_id is not None:
@@ -144,83 +143,50 @@ def list_urls():
             return jsonify({"error": "user_id must be an integer"}), 400
         query = query.where(URL.user == user_id)
 
-    if is_active is not None:
-        is_active_bool = is_active.lower() == "true"
-        query = query.where(URL.is_active == is_active_bool)
-
-    if short_code is not None:
-        query = query.where(URL.short_code == short_code)
-
-    urls = []
-    for url in query:
-        urls.append({
-            "id": url.id,
-            "user_id": url.user.id,
-            "short_code": url.short_code,
-            "original_url": url.original_url,
-            "title": url.title,
-            "is_active": url.is_active,
-            "created_at": url.created_at.isoformat(),
-            "updated_at": url.updated_at.isoformat(),
-        })
+    urls = [serialize_url(url) for url in query]
 
     return jsonify(urls), 200
 
 
-from app.models import URL  # adjust import if needed
+# ------------------ GET BY ID ------------------
 
-url_bp = Blueprint('urls', __name__)
-
-
-@url_bp.route('/urls/<int:id>', methods=['GET'])
+@url_bp.route("/urls/<int:id>", methods=["GET"])
 def get_url_by_id(id):
     url = URL.get_or_none(URL.id == id)
 
     if not url:
         return jsonify({"error": "URL not found"}), 404
 
-    return jsonify({
-        "id": url.id,
-        "user_id": url.user_id,
-        "short_code": url.short_code,
-        "original_url": url.original_url,
-        "title": url.title,
-        "is_active": url.is_active,
-        "created_at": url.created_at.isoformat() if url.created_at else None,
-        "updated_at": url.updated_at.isoformat() if url.updated_at else None
-    }), 200
+    return jsonify(serialize_url(url)), 200
 
 
+# ------------------ UPDATE ------------------
 
-@url_bp.route('/urls/<int:id>', methods=['PUT'])
+@url_bp.route("/urls/<int:id>", methods=["PUT"])
 def update_url(id):
     url = URL.get_or_none(URL.id == id)
 
     if not url:
         return jsonify({"error": "URL not found"}), 404
 
-    data = request.get_json()
+    data = request.get_json(force=True, silent=True)
 
-    # Update fields only if provided
+    if not data:
+        return jsonify({"error": "Invalid JSON body"}), 400
+
     if "title" in data:
+        if not isinstance(data["title"], str):
+            return jsonify({"error": "title must be a string"}), 400
+        if len(data["title"]) > 255:
+            return jsonify({"error": "title too long"}), 400
         url.title = data["title"]
 
     if "is_active" in data:
+        if not isinstance(data["is_active"], bool):
+            return jsonify({"error": "is_active must be a boolean"}), 400
         url.is_active = data["is_active"]
 
-    # Update timestamp
     url.updated_at = datetime.utcnow()
-
     url.save()
 
-    return jsonify({
-        "id": url.id,
-        "user_id": url.user_id,
-        "short_code": url.short_code,
-        "original_url": url.original_url,
-        "title": url.title,
-        "is_active": url.is_active,
-        "created_at": url.created_at.isoformat() if url.created_at else None,
-        "updated_at": url.updated_at.isoformat() if url.updated_at else None
-    }), 200
-
+    return jsonify(serialize_url(url)), 200
