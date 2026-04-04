@@ -166,4 +166,26 @@ def list_urls():
 
     return jsonify(urls), 200
 
+from flask import Blueprint, jsonify
+from app.models import URL  # adjust import if needed
 
+url_bp = Blueprint('urls', __name__)
+
+
+@url_bp.route('/urls/<int:id>', methods=['GET'])
+def get_url_by_id(id):
+    url = URL.get_or_none(URL.id == id)
+
+    if not url:
+        return jsonify({"error": "URL not found"}), 404
+
+    return jsonify({
+        "id": url.id,
+        "user_id": url.user_id,
+        "short_code": url.short_code,
+        "original_url": url.original_url,
+        "title": url.title,
+        "is_active": url.is_active,
+        "created_at": url.created_at.isoformat() if url.created_at else None,
+        "updated_at": url.updated_at.isoformat() if url.updated_at else None
+    }), 200
