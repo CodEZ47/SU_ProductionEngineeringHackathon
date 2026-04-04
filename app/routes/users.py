@@ -133,7 +133,23 @@ def create_user():
 
 @users_bp.route("/users", methods=["GET"])
 def list_users():
-    users = User.select().dicts()
+
+    page = request.args.get("page")
+    per_page = request.args.get("per_page")
+
+    users = User.select().order_by(User.id)
+    if page is not None and per_page is not None:
+        try:
+            page = int(page)
+            per_page = int(per_page)
+        except ValueError:
+            return jsonify({"error": "page and per_page must be integers"}), 400
+    
+        if page < 1 or per_page < 1 or per_page > 100:
+            return jsonify({"error": "Invalid pagination parameters"}), 400
+        users = users.paginate(page, per_page)
+
+    users = users.dicts()
     results = []
 
     for user in users:
