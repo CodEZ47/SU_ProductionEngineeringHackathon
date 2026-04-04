@@ -20,6 +20,14 @@ def init_db(app):
     )
     db.initialize(database)
 
+    from app.models.user import User
+    from app.models.url import URL
+    from app.models.event import Event
+
+    db.connect(reuse_if_open=True)
+    db.create_tables([User, URL, Event], safe=True)
+    db.close()
+
     @app.before_request
     def _db_connect():
         db.connect(reuse_if_open=True)
