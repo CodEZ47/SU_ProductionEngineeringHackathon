@@ -127,7 +127,7 @@ def create_user():
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "created_at": user.created_at
+            "created_at": user.created_at.isoformat()
         }), 200
     
     except IntegrityError:
@@ -196,7 +196,7 @@ def update_user(id):
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "created_at": user.created_at
+            "created_at": user.created_at.isoformat()
         }), 200
     except IntegrityError:
         return jsonify({"error": "username or email already exists"}), 409
