@@ -8,6 +8,9 @@ from app.models.url import URL
 from app.models.user import User
 from app.models.event import Event
 
+from flask import redirect
+
+
 url_bp = Blueprint("url", __name__)
 
 
@@ -43,7 +46,7 @@ def is_valid_url(url):
 def create_url():
     data = request.get_json(force=True, silent=True)
 
-    print("HIT CREATE URL")  # debug
+
 
     if not data:
         return jsonify({"error": "Invalid JSON body"}), 400
@@ -123,3 +126,44 @@ def create_url():
         "created_at": new_url.created_at.isoformat(),
         "updated_at": new_url.updated_at.isoformat(),
     }), 201
+
+
+
+@url_bp.route("/urls", methods=["GET"])
+def list_urls():
+    user_id = request.args.get("user_id")
+    is_active = request.args.get("is_active")
+    short_code = request.args.get("short_code")
+
+    query = URL.select()
+
+    if user_id is not None:
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            return jsonify({"error": "user_id must be an integer"}), 400
+        query = query.where(URL.user == user_id)
+
+    if is_active is not None:
+        is_active_bool = is_active.lower() == "true"
+        query = query.where(URL.is_active == is_active_bool)
+
+    if short_code is not None:
+        query = query.where(URL.short_code == short_code)
+
+    urls = []
+    for url in query:
+        urls.append({
+            "id": url.id,
+            "user_id": url.user.id,
+            "short_code": url.short_code,
+            "original_url": url.original_url,
+            "title": url.title,
+            "is_active": url.is_active,
+            "created_at": url.created_at.isoformat(),
+            "updated_at": url.updated_at.isoformat(),
+        })
+
+    return jsonify(urls), 200
+
+
