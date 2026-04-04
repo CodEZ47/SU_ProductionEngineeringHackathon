@@ -98,8 +98,11 @@ def create_user():
 
     data = request.get_json(silent=True) #error is handled by custom handler
 
-    if not data:
+    if not data or data is None:
         return jsonify({"error": "Invalid JSON"}), 400
+    
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
     
     username = data.get("username")
     email = data.get("email")
@@ -211,3 +214,14 @@ def update_user(id):
         }), 200
     except IntegrityError:
         return jsonify({"error": "username or email already exists"}), 409
+
+
+@users_bp.route("/users/<int:id>", methods=["DELETE"])
+def delete_user(id):
+    user = User.get_or_none(User.id == id)
+
+    if not user:
+        return jsonify({"error": "user not found"}), 404
+    
+    user.delete_instance()
+    return jsonify({"message": "user deleted successfully"}), 200
