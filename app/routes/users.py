@@ -4,6 +4,7 @@ import re
 
 from flask import Blueprint, request, jsonify
 from peewee import IntegrityError, chunked
+
 from app.models.user import User
 from app.database import db
 
@@ -126,7 +127,7 @@ def create_user():
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "created_at": user.created_at
+            "created_at": user.created_at.isoformat()
         }), 200
     
     except IntegrityError:
@@ -138,7 +139,16 @@ def create_user():
 @users_bp.route("/users", methods=["GET"])
 def list_users():
     users = User.select().dicts()
-    return jsonify(list(users)), 200
+    results = []
+
+    for user in users:
+        results.append({
+            "id": user["id"],
+            "username": user["username"],
+            "email": user["email"],
+            "created_at": user["created_at"].isoformat()
+        })
+    return jsonify(results), 200
 
 
 @users_bp.route("/users/<int:id>", methods=["GET"])
@@ -152,7 +162,7 @@ def get_user_by_id(id):
         "id": user.id,
         "username": user.username,
         "email": user.email,
-        "created_at": user.created_at
+        "created_at": user.created_at.isoformat()
     }), 200
 
 @users_bp.route("/users/<int:id>", methods=["PUT"])
@@ -186,7 +196,7 @@ def update_user(id):
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "created_at": user.created_at
+            "created_at": user.created_at.isoformat()
         }), 200
     except IntegrityError:
         return jsonify({"error": "username or email already exists"}), 409
