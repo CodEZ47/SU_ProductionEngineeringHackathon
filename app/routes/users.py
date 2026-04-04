@@ -182,7 +182,7 @@ def get_user_by_id(id):
 @users_bp.route("/users/<int:id>", methods=["PUT"])
 def update_user(id):
     data = request.get_json()
-    if not data:
+    if not data or not isinstance(data, dict) or data is None:
         return jsonify({"error": "username required"}), 400
     
     user = User.get_or_none(User.id == id)
