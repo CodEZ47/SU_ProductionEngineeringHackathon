@@ -4,7 +4,7 @@ from app.database import BaseModel
 
 class User(BaseModel):
     id = AutoField()
-    username = CharField(unique=True)
+    username = CharField()
     email = CharField(unique=True)
     created_at = DateTimeField(default=datetime.now)
 

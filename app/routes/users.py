@@ -49,11 +49,9 @@ def import_users_bulk():
 
         users_imported = 0
         rows_to_insert = []
-        seen_usernames = set()
         seen_emails = set()
 
         existing_users = list(User.select(User.username, User.email).dicts())
-        existing_usernames = {u["username"] for u in existing_users}
         existing_emails = {u["email"] for u in existing_users}
 
         for row in reader:
@@ -61,9 +59,7 @@ def import_users_bulk():
             email = row["email"].strip()
 
             if (
-                username in existing_usernames
-                or email in existing_emails
-                or username in seen_usernames
+                email in existing_emails
                 or email in seen_emails
             ):
                 continue
@@ -78,7 +74,6 @@ def import_users_bulk():
                 "email": email,
             })
 
-            seen_usernames.add(username)
             seen_emails.add(email)
             users_imported += 1
         
