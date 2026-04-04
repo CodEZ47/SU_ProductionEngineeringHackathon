@@ -51,6 +51,21 @@ def import_users_bulk():
 @users_bp.route("/users", methods=["GET"])
 def list_users():
     users = User.select().dicts()
-    return jsonify(list(users))
+    return jsonify(list(users)), 200
 
 
+@users_bp.route("/users/<int:id>", methods=["GET"])
+def get_user_by_id(id):
+    user = User.get_or_none(User.id == id)
+
+    if not user:
+        return jsonify({"error": "user not found"}), 404
+    
+    print(user)
+    
+    return jsonify({
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "created_at": user.created_at
+    }), 200
