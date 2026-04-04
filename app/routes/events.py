@@ -23,8 +23,8 @@ def list_events():
             "id": event.id,
             "event_type": event.event_type,
             "timestamp": event.timestamp.isoformat(),
-            "url": event.url_id,
-            "user": event.user_id,
+            "url_id": event.url_id,
+            "user_id": event.user_id,
             "details": details
         })
 
