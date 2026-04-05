@@ -24,6 +24,18 @@ def serialize_url(url):
     }
 
 
+def serialize_event(event):
+    return {
+        "id": event.id,
+        "url_id": event.url.id,
+        "user_id": event.user.id,
+        "event_type": event.event_type,
+        "timestamp": event.timestamp.strftime("%Y-%m-%dT%H:%M:%S"),
+        "details": event.details if isinstance(event.details, dict) else {}
+    }
+
+
+
 def is_valid_url(url):
     parsed = urlparse(url)
     return parsed.scheme in ("http", "https") and parsed.netloc
@@ -38,7 +50,12 @@ def generate_unique_code(length=6):
 
 
 def parse_bool(value):
-    return str(value).lower() in ["true", "1", "yes"]
+    val = str(value).lower()
+    if val in ["true", "1"]:
+        return True
+    if val in ["false", "0"]:
+        return False
+    raise ValueError("Invalid boolean")
 
 
 def get_next_event_id():
@@ -46,16 +63,20 @@ def get_next_event_id():
     return (last.id + 1) if last else 1
 
 
+
 @url_bp.route("/urls", methods=["POST"])
 def create_url():
-    data = request.get_json(force=True, silent=True)
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 400
+
+    data = request.get_json()
 
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
 
     user_id = data.get("user_id")
     original_url = data.get("original_url")
-    title = data.get("title")
+    title = data.get("title") or ""
 
     if user_id is None or original_url is None:
         return jsonify({"error": "user_id and original_url are required"}), 400
@@ -68,53 +89,40 @@ def create_url():
 
     original_url = original_url.strip()
 
-    if original_url == "":
+    if not original_url:
         return jsonify({"error": "original_url cannot be empty"}), 400
-
-    if len(original_url) > 2048:
-        return jsonify({"error": "URL too long"}), 400
 
     if not is_valid_url(original_url):
         return jsonify({"error": "Invalid URL format"}), 400
 
-    if title is not None:
-        if not isinstance(title, str):
-            return jsonify({"error": "title must be a string"}), 400
-        if len(title) > 255:
-            return jsonify({"error": "title too long"}), 400
+    if not isinstance(title, str):
+        return jsonify({"error": "title must be a string"}), 400
 
     user = User.get_or_none(User.id == user_id)
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return jsonify({"error": "Invalid user_id"}), 400
 
     now = datetime.utcnow()
     code = generate_unique_code()
 
-    try:
-        new_url = URL.create(
-            user=user,
-            short_code=code,
-            original_url=original_url,
-            title=title,
-            is_active=True,
-            created_at=now,
-            updated_at=now,
-        )
+    new_url = URL.create(
+        user=user,
+        short_code=code,
+        original_url=original_url,
+        title=title,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
 
-        Event.create(
-            id=get_next_event_id(),
-            url=new_url,
-            user=user,
-            event_type="created",
-            timestamp=now,
-            details={
-                "short_code": code,
-                "original_url": original_url
-            }
-        )
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    Event.create(
+        id=get_next_event_id(),
+        url=new_url,
+        user=user,
+        event_type="created",
+        timestamp=now,
+        details={"short_code": code, "original_url": original_url}
+    )
 
     return jsonify(serialize_url(new_url)), 201
 
@@ -128,19 +136,34 @@ def get_urls():
 
     if user_id:
         try:
-            query = query.where(URL.user == int(user_id))
+            query = query.where(URL.user_id == int(user_id))
         except ValueError:
             return jsonify({"error": "Invalid user_id"}), 400
 
     if is_active is not None:
-        query = query.where(URL.is_active == parse_bool(is_active))
+        try:
+            query = query.where(URL.is_active == parse_bool(is_active))
+        except ValueError:
+            return jsonify({"error": "Invalid is_active"}), 400
 
-    limit = int(request.args.get("limit", 10))
-    offset = int(request.args.get("offset", 0))
-    query = query.limit(limit).offset(offset)
+    # pagination support
+    page = request.args.get("page")
+    per_page = request.args.get("per_page")
 
-    urls = [serialize_url(u) for u in query]
-    return jsonify(urls), 200
+    if page and per_page:
+        try:
+            page = int(page)
+            per_page = int(per_page)
+            offset = (page - 1) * per_page
+            query = query.limit(per_page).offset(offset)
+        except ValueError:
+            return jsonify({"error": "Invalid pagination params"}), 400
+    elif "limit" in request.args or "offset" in request.args:
+        limit = int(request.args.get("limit", 10))
+        offset = int(request.args.get("offset", 0))
+        query = query.limit(limit).offset(offset)
+
+    return jsonify([serialize_url(u) for u in query]), 200
 
 
 @url_bp.route("/urls/<int:id>", methods=["GET"])
@@ -160,7 +183,10 @@ def update_url(id):
     if not url:
         return jsonify({"error": "URL not found"}), 404
 
-    data = request.get_json(force=True, silent=True)
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 400
+
+    data = request.get_json()
 
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
@@ -188,9 +214,7 @@ def update_url(id):
         user=url.user,
         event_type="updated",
         timestamp=datetime.utcnow(),
-        details={
-            "updated_fields": updated_fields
-        }
+        details={"updated_fields": updated_fields}
     )
 
     return jsonify(serialize_url(url)), 200
@@ -201,7 +225,7 @@ def delete_url(id):
     url = URL.get_or_none(URL.id == id)
 
     if not url:
-        return jsonify({"error": "URL not found"}), 404
+        return "", 404
 
     Event.create(
         id=get_next_event_id(),
@@ -209,38 +233,35 @@ def delete_url(id):
         user=url.user,
         event_type="deleted",
         timestamp=datetime.utcnow(),
-        details={
-            "short_code": url.short_code
-        }
+        details={"short_code": url.short_code}
     )
 
-    Event.delete().where(Event.url == url).execute()
     url.delete_instance()
 
-    return "", 204
+    return jsonify({"message": "URL deleted successfully"}), 200
+
+
+@url_bp.route("/events", methods=["GET"])
+def get_events():
+    events = Event.select()
+    return jsonify([serialize_event(e) for e in events]), 200
 
 
 @url_bp.route("/<string:short_code>", methods=["GET"])
 def redirect_short_code(short_code):
     url = URL.get_or_none(URL.short_code == short_code)
 
+
     if not url or not url.is_active:
-        return jsonify({"error": "URL not found or inactive"}), 404
+        return "", 404
 
-    try:
-        Event.create(
-            id=get_next_event_id(),
-            url=url,
-            user=url.user,
-            event_type="visited",
-            timestamp=datetime.utcnow(),
-            details={"short_code": short_code}
-        )
-    except Exception as e:
-        print("Click event logging failed:", e)
-
-    return Response(
-        "",
-        status=302,
-        headers={"Location": url.original_url}
+    Event.create(
+        id=get_next_event_id(),
+        url=url,
+        user=url.user,
+        event_type="visited",
+        timestamp=datetime.utcnow(),
+        details={"short_code": short_code}
     )
+
+    return Response("", status=302, headers={"Location": url.original_url})
