@@ -36,6 +36,7 @@ def list_events():
     
     
     query = query.order_by(Event.timestamp.desc())
+    total = query.count()
 
     if page is not None and per_page is not None:
         try:
@@ -70,7 +71,7 @@ def list_events():
             "details": details
         })
 
-    return jsonify({"events": result, "total": query.count(), "page": page, "per_page": per_page}), 200
+    return jsonify({"events": result, "total": total, "page": page, "per_page": per_page}), 200
 
 @events_bp.route("/events", methods=["POST"])
 def create_event():
@@ -90,6 +91,12 @@ def create_event():
     if not all([event_type, url_id, user_id]):
         return jsonify({"error": "Missing required fields"}), 400
     
+    if not isinstance(user_id, int) or not isinstance(url_id, int):
+        return jsonify({"error": "user_id and url_id must be integers"}), 400
+    
+    if not isinstance(event_type, str):
+        return jsonify({"error": "event_type must be a string"}), 400
+    
     if details is not None and not isinstance(details, dict):
         return jsonify({"error": "Details must be a JSON object"}), 400
     
@@ -101,8 +108,8 @@ def create_event():
     try:
         event = Event.create(
             event_type=event_type,
-            url_id=url_id,
-            user_id=user_id,
+            url=url,
+            user=user,
             details=json.dumps(details) if details else None
         )
         return jsonify({
