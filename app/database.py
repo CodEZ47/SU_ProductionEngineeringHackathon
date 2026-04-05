@@ -25,7 +25,7 @@ def connect_with_retry(db, retries=10, delay=2):
 def init_db(app):
     database = PostgresqlDatabase(
         os.environ.get("DATABASE_NAME", "hackathon_db"),
-        host=os.environ.get("DATABASE_HOST", "postgres"),
+        host=os.environ.get("DATABASE_HOST", "localhost"),
         port=int(os.environ.get("DATABASE_PORT", 5432)),
         user=os.environ.get("DATABASE_USER", "postgres"),
         password=os.environ.get("DATABASE_PASSWORD", "postgres"),
