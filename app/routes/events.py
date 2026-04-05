@@ -75,8 +75,6 @@ def list_events():
         if page > max_page:
             events = []
             result = []
-            response_page = page
-            response_per_page = per_page
         else:
             query = query.paginate(page, per_page)
             events = query
@@ -99,8 +97,6 @@ def list_events():
                     "user_id": event.user_id,
                     "details": details
                 })
-            response_page = page
-            response_per_page = per_page
     else:
         events = query
         result = []
@@ -122,15 +118,18 @@ def list_events():
                 "user_id": event.user_id,
                 "details": details
             })
-        response_page = None
-        response_per_page = None
+        page = None
+        per_page = None
 
-    response_data = {"events": result, "total": total}
-    if use_pagination and response_page is not None:
-        response_data["page"] = response_page
-        response_data["per_page"] = response_per_page
-
-    return jsonify(response_data), 200
+    return jsonify({
+        "kind": "list",
+        "sample": result,
+        "metadata": {
+            "total": total,
+            "page": page,
+            "per_page": per_page
+        }
+    }), 200
 
 
 @events_bp.route("/events", methods=["POST"])
@@ -150,9 +149,12 @@ def create_event():
 
     if event_type is None or url_id is None or user_id is None:
         missing = []
-        if event_type is None: missing.append("event_type")
-        if url_id is None: missing.append("url_id")
-        if user_id is None: missing.append("user_id")
+        if event_type is None:
+            missing.append("event_type")
+        if url_id is None:
+            missing.append("url_id")
+        if user_id is None:
+            missing.append("user_id")
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
     if not isinstance(user_id, int) or not isinstance(url_id, int):
