@@ -12,9 +12,15 @@ def app():
     app.config["TESTING"] = True
 
     with app.app_context():
+
         db.create_tables([User, URL, Event])
 
-        User.create(id=1, username="test", email="test@test.com")
+        if not User.get_or_none(User.id == 1):
+            User.create(
+                id=1,
+                username="test",
+                email="test@test.com"
+            )
 
     yield app
 
