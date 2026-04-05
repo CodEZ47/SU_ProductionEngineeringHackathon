@@ -20,6 +20,20 @@ def sync_event_id_sequence():
         );
     """)
 
+def create_event_record(event_type, url, user, details=None):
+    if details is not None and not isinstance(details, dict):
+        raise ValueError("Details must be a JSON object")
+
+    sync_event_id_sequence()
+
+    event = Event.create(
+        event_type=event_type,
+        url=url,
+        user=user,
+        details=json.dumps(details) if details is not None else None
+    )
+    return event
+
 @events_bp.route("/events", methods=["GET"])
 def list_events():
     event_type = request.args.get("event_type")
@@ -118,12 +132,11 @@ def create_event():
         return jsonify({"error": "User or URL not found"}), 404
     
     try:
-        sync_event_id_sequence()
-        event = Event.create(
+        event = create_event_record(
             event_type=event_type,
             url=url,
             user=user,
-            details=json.dumps(details) if details else None
+            details=details
         )
 
         event.save()
