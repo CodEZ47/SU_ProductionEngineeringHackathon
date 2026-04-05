@@ -257,8 +257,17 @@ def redirect_short_code(short_code):
     url = URL.get_or_none(URL.short_code == short_code)
 
 
-    if not url or not url.is_active:
+    if not url:
         return jsonify({"error": "URL not found"}), 404
+    
+    if not url.is_active:
+        create_event_record(
+            url=url,
+            user=url.user,
+            event_type="visited",
+            details={"short_code": short_code}
+        )
+        return jsonify({"error": "URL is inactive"}), 410
     
     if not url.user:
         return jsonify({"error": "URL owner not found"}), 404
