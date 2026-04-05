@@ -1,6 +1,8 @@
-from flask import Blueprint, request, jsonify, redirect, Response
+from flask import Blueprint, request, jsonify, Response
 from datetime import datetime
-import json
+from urllib.parse import urlparse
+import random
+import string
 
 from app.models.url import URL
 from app.models.user import User
@@ -21,6 +23,22 @@ def serialize_url(url):
         "updated_at": url.updated_at.isoformat() if url.updated_at else None,
     }
 
+
+def is_valid_url(url):
+    parsed = urlparse(url)
+    return parsed.scheme in ("http", "https") and parsed.netloc
+
+
+def generate_unique_code(length=6):
+    chars = string.ascii_letters + string.digits
+    while True:
+        code = ''.join(random.choice(chars) for _ in range(length))
+        if not URL.get_or_none(URL.short_code == code):
+            return code
+
+
+def parse_bool(value):
+    return str(value).lower() in ["true", "1", "yes"]
 
 
 @url_bp.route("/urls", methods=["POST"])
@@ -43,9 +61,6 @@ def create_url():
     if not isinstance(original_url, str):
         return jsonify({"error": "original_url must be a string"}), 400
 
-    if title is not None and not isinstance(title, str):
-        return jsonify({"error": "title must be a string"}), 400
-
     original_url = original_url.strip()
 
     if original_url == "":
@@ -54,22 +69,21 @@ def create_url():
     if len(original_url) > 2048:
         return jsonify({"error": "URL too long"}), 400
 
-    if title and len(title) > 255:
-        return jsonify({"error": "title too long"}), 400
+    if not is_valid_url(original_url):
+        return jsonify({"error": "Invalid URL format"}), 400
+
+    if title is not None:
+        if not isinstance(title, str):
+            return jsonify({"error": "title must be a string"}), 400
+        if len(title) > 255:
+            return jsonify({"error": "title too long"}), 400
 
     user = User.get_or_none(User.id == user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
     now = datetime.utcnow()
-
-    # simple short code generator (replace if needed)
-    import random, string
-    def generate_code(length=6):
-        chars = string.ascii_letters + string.digits
-        return ''.join(random.choice(chars) for _ in range(length))
-
-    code = generate_code()
+    code = generate_unique_code()
 
     try:
         new_url = URL.create(
@@ -81,23 +95,21 @@ def create_url():
             created_at=now,
             updated_at=now,
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
 
-    # Safe event logging
-    try:
+
         Event.create(
             url=new_url,
             user=user,
             event_type="created",
             timestamp=now,
-            details=json.dumps({
+            details={
                 "short_code": code,
                 "original_url": original_url
-            })
+            }
         )
+
     except Exception as e:
-        print("Event logging failed:", e)
+        return jsonify({"error": str(e)}), 400
 
     return jsonify(serialize_url(new_url)), 201
 
@@ -112,17 +124,19 @@ def get_urls():
     if user_id:
         try:
             query = query.where(URL.user == int(user_id))
-        except:
+        except ValueError:
             return jsonify({"error": "Invalid user_id"}), 400
 
     if is_active is not None:
-        is_active_bool = is_active.lower() == "true"
-        query = query.where(URL.is_active == is_active_bool)
+        query = query.where(URL.is_active == parse_bool(is_active))
+
+    # Pagination
+    limit = int(request.args.get("limit", 10))
+    offset = int(request.args.get("offset", 0))
+    query = query.limit(limit).offset(offset)
 
     urls = [serialize_url(u) for u in query]
-
     return jsonify(urls), 200
-
 
 
 @url_bp.route("/urls/<int:id>", methods=["GET"])
@@ -133,7 +147,6 @@ def get_url_by_id(id):
         return jsonify({"error": "URL not found"}), 404
 
     return jsonify(serialize_url(url)), 200
-
 
 
 @url_bp.route("/urls/<int:id>", methods=["PUT"])
@@ -164,8 +177,6 @@ def update_url(id):
     return jsonify(serialize_url(url)), 200
 
 
-
-
 @url_bp.route("/urls/<int:id>", methods=["DELETE"])
 def delete_url(id):
     url = URL.get_or_none(URL.id == id)
@@ -174,11 +185,9 @@ def delete_url(id):
         return jsonify({"error": "URL not found"}), 404
 
     Event.delete().where(Event.url == url).execute()
-
     url.delete_instance()
 
     return "", 204
-
 
 
 @url_bp.route("/<string:short_code>", methods=["GET"])
@@ -188,6 +197,19 @@ def redirect_short_code(short_code):
     if not url or not url.is_active:
         return jsonify({"error": "URL not found or inactive"}), 404
 
-    return Response(status=302, headers={
-        "Location": url.original_url
-    })
+    try:
+        Event.create(
+            url=url,
+            user=url.user,
+            event_type="clicked",
+            timestamp=datetime.utcnow(),
+            details={"short_code": short_code}
+        )
+    except Exception as e:
+        print("Click event logging failed:", e)
+
+    return Response(
+        "",
+        status=302,
+        headers={"Location": url.original_url}
+    )
