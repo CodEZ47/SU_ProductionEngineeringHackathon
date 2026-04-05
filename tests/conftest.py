@@ -12,17 +12,47 @@ def app():
     app.config["TESTING"] = True
 
     with app.app_context():
+        db.connect(reuse_if_open=True)
 
-        db.create_tables([User, URL, Event])
+        # Start every test from a clean database state
+        db.drop_tables([Event, URL, User], safe=True)
+        db.create_tables([User, URL, Event], safe=True)
 
-        if not User.get_or_none(User.id == 1):
-            User.create(
-                id=1,
-                username="test",
-                email="test@test.com"
-            )
+        # Seed one user for tests
+        User.create(
+            id=1,
+            username="testuser",
+            email="test@test.com"
+        )
+
+        # Reset Postgres sequences so future inserts do not collide
+        db.execute_sql("""
+            SELECT setval(
+                pg_get_serial_sequence('"user"', 'id'),
+                COALESCE((SELECT MAX(id) FROM "user"), 1),
+                true
+            );
+        """)
+        db.execute_sql("""
+            SELECT setval(
+                pg_get_serial_sequence('"url"', 'id'),
+                COALESCE((SELECT MAX(id) FROM "url"), 1),
+                true
+            );
+        """)
+        db.execute_sql("""
+            SELECT setval(
+                pg_get_serial_sequence('"event"', 'id'),
+                COALESCE((SELECT MAX(id) FROM "event"), 1),
+                true
+            );
+        """)
 
     yield app
+
+    with app.app_context():
+        if not db.is_closed():
+            db.close()
 
 
 @pytest.fixture

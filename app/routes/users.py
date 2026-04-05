@@ -102,8 +102,12 @@ def import_users_bulk():
 @users_bp.route("/users", methods=["POST"])
 def create_user():
     data = request.get_json(silent=True)
-    if not data:
+
+    if data is None:
         return jsonify({"error": "Invalid JSON"}), 400
+
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
 
     username = data.get("username")
     email = data.get("email")
@@ -124,7 +128,7 @@ def create_user():
             "created_at": user.created_at.isoformat()
         }), 201
     except IntegrityError:
-        return jsonify({"error": "email already exists"}), 400
+        return jsonify({"error": "email already exists"}), 409
 
 
 @users_bp.route("/users", methods=["GET"])
