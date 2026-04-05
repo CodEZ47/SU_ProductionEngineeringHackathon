@@ -202,6 +202,8 @@ def update_url(id):
     if "title" in data:
         if not isinstance(data["title"], str):
             return jsonify({"error": "title must be a string"}), 400
+        if len(data["title"]) > 255:
+            return jsonify({"error": f"title must be at most {255} characters"}), 422
         url.title = data["title"]
         updated_fields.append("title")
 

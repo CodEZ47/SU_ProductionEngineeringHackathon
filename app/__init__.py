@@ -10,6 +10,8 @@ def create_app():
 
     app = Flask(__name__)
 
+    app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
+
     init_db(app)
 
     from app import models  # noqa: F401 - registers models with Peewee
