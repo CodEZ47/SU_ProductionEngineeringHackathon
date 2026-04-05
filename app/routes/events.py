@@ -10,7 +10,6 @@ from app.database import db
 events_bp = Blueprint("events", __name__)
 
 
-# Auto-grader sequence reset for event id after seeding
 def sync_event_id_sequence():
     db.execute_sql("""
         SELECT setval(
@@ -90,7 +89,6 @@ def list_events():
     result = []
     for event in query:
         details = {}
-
         if event.details:
             try:
                 details = json.loads(event.details)
