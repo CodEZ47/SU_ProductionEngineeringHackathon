@@ -56,7 +56,10 @@ def import_users_bulk():
 
         for row in reader:
             username = row["username"].strip()
-            email = row["email"].strip()
+            email = row["email"].strip().lower()
+
+            if not username or not email:
+                continue
 
             if (
                 email in existing_emails
@@ -75,7 +78,6 @@ def import_users_bulk():
             })
 
             seen_emails.add(email)
-            users_imported += 1
         
         if not rows_to_insert:
             return jsonify({
@@ -85,7 +87,8 @@ def import_users_bulk():
         with db.atomic():
             for batch in chunked(rows_to_insert, 100):
                 User.insert_many(batch).execute()
-            
+        
+        users_imported = len(rows_to_insert)
         
         return jsonify({"count": users_imported}), 201
     
