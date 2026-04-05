@@ -19,8 +19,8 @@ def serialize_url(url):
         "original_url": url.original_url,
         "title": url.title,
         "is_active": url.is_active,
-        "created_at": url.created_at.isoformat() if url.created_at else None,
-        "updated_at": url.updated_at.isoformat() if url.updated_at else None,
+        "created_at": url.created_at.strftime("%Y-%m-%dT%H:%M:%S") if url.created_at else None,
+        "updated_at": url.updated_at.strftime("%Y-%m-%dT%H:%M:%S") if url.updated_at else None,
     }
 
 
@@ -41,11 +41,16 @@ def parse_bool(value):
     return str(value).lower() in ["true", "1", "yes"]
 
 
+def get_next_event_id():
+    last = Event.select().order_by(Event.id.desc()).first()
+    return (last.id + 1) if last else 1
+
+
 @url_bp.route("/urls", methods=["POST"])
 def create_url():
     data = request.get_json(force=True, silent=True)
 
-    if not data:
+    if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
 
     user_id = data.get("user_id")
@@ -96,8 +101,8 @@ def create_url():
             updated_at=now,
         )
 
-
         Event.create(
+            id=get_next_event_id(),
             url=new_url,
             user=user,
             event_type="created",
@@ -130,7 +135,6 @@ def get_urls():
     if is_active is not None:
         query = query.where(URL.is_active == parse_bool(is_active))
 
-    # Pagination
     limit = int(request.args.get("limit", 10))
     offset = int(request.args.get("offset", 0))
     query = query.limit(limit).offset(offset)
@@ -158,21 +162,36 @@ def update_url(id):
 
     data = request.get_json(force=True, silent=True)
 
-    if not data:
+    if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
+
+    updated_fields = []
 
     if "title" in data:
         if not isinstance(data["title"], str):
             return jsonify({"error": "title must be a string"}), 400
         url.title = data["title"]
+        updated_fields.append("title")
 
     if "is_active" in data:
         if not isinstance(data["is_active"], bool):
             return jsonify({"error": "is_active must be a boolean"}), 400
         url.is_active = data["is_active"]
+        updated_fields.append("is_active")
 
     url.updated_at = datetime.utcnow()
     url.save()
+
+    Event.create(
+        id=get_next_event_id(),
+        url=url,
+        user=url.user,
+        event_type="updated",
+        timestamp=datetime.utcnow(),
+        details={
+            "updated_fields": updated_fields
+        }
+    )
 
     return jsonify(serialize_url(url)), 200
 
@@ -183,6 +202,17 @@ def delete_url(id):
 
     if not url:
         return jsonify({"error": "URL not found"}), 404
+
+    Event.create(
+        id=get_next_event_id(),
+        url=url,
+        user=url.user,
+        event_type="deleted",
+        timestamp=datetime.utcnow(),
+        details={
+            "short_code": url.short_code
+        }
+    )
 
     Event.delete().where(Event.url == url).execute()
     url.delete_instance()
@@ -199,9 +229,10 @@ def redirect_short_code(short_code):
 
     try:
         Event.create(
+            id=get_next_event_id(),
             url=url,
             user=url.user,
-            event_type="clicked",
+            event_type="visited",
             timestamp=datetime.utcnow(),
             details={"short_code": short_code}
         )
