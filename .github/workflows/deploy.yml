@@ -1,0 +1,25 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            cd /home/deploy/SU_ProductionEngineeringHackathon
+
+            export DATABASE_HOST=${{ secrets.DB_HOST }}
+            git pull origin main
+            docker compose down
+            docker compose up -d --build
+            curl -f http://localhost:5000/health
