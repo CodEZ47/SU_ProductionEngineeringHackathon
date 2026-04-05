@@ -10,6 +10,16 @@ from app.database import db
 events_bp = Blueprint("events", __name__)
 
 
+def sync_event_id_sequence():
+    db.execute_sql("""
+        SELECT setval(
+            pg_get_serial_sequence('"event"', 'id'),
+            COALESCE((SELECT MAX(id) FROM "event"), 1),
+            true
+        );
+    """)
+
+
 @events_bp.route("/events", methods=["GET"])
 def list_events():
     event_type = request.args.get("event_type")
@@ -110,6 +120,8 @@ def create_event():
         return jsonify({"error": "User or URL not found"}), 404
 
     try:
+        sync_event_id_sequence()
+
         details_json = json.dumps(details) if details is not None else None
 
         event = Event.create(
