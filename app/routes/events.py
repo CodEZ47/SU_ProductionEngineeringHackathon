@@ -8,22 +8,16 @@ from app.database import db
 events_bp = Blueprint("events", __name__)
 
 
-# THIS SHOULD ONLY BE CALLED ONCE AFTER SEEDING, NOT ON EVERY POST
-def sync_event_id_sequence():
-    db.execute_sql("""
-        SELECT setval(
-            pg_get_serial_sequence('event', 'id'),
-            COALESCE((SELECT MAX(id) FROM event), 0) + 1,
-            false
-        );
-    """)
+def get_next_event_id():
+    last = Event.select().order_by(Event.id.desc()).first()
+    return (last.id + 1) if last else 1
 
 
 def create_event_record(event_type, url, user, details=None):
     if details is not None and not isinstance(details, dict):
         raise ValueError("Details must be a JSON object")
-    # DO NOT call sync_event_id_sequence() here - causes race conditions!
     event = Event.create(
+        id=get_next_event_id(),
         event_type=event_type,
         url=url,
         user=user,
@@ -154,29 +148,21 @@ def create_event():
     user_id = data.get("user_id")
     details = data.get("details")
 
-    # Specific field validation with detailed errors
-    missing_fields = []
-    if event_type is None:
-        missing_fields.append("event_type")
-    if url_id is None:
-        missing_fields.append("url_id")
-    if user_id is None:
-        missing_fields.append("user_id")
+    if event_type is None or url_id is None or user_id is None:
+        missing = []
+        if event_type is None: missing.append("event_type")
+        if url_id is None: missing.append("url_id")
+        if user_id is None: missing.append("user_id")
+        return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
-    if missing_fields:
-        return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+    if not isinstance(user_id, int) or not isinstance(url_id, int):
+        return jsonify({"error": "user_id and url_id must be integers"}), 400
 
     if not isinstance(event_type, str) or len(event_type.strip()) == 0:
         return jsonify({"error": "event_type must be a non-empty string"}), 400
 
-    if not isinstance(url_id, int) or url_id <= 0:
-        return jsonify({"error": "url_id must be a positive integer"}), 400
-
-    if not isinstance(user_id, int) or user_id <= 0:
-        return jsonify({"error": "user_id must be a positive integer"}), 400
-
     if details is not None and not isinstance(details, dict):
-        return jsonify({"error": "details must be a JSON object"}), 400
+        return jsonify({"error": "Details must be a JSON object"}), 400
 
     user = User.get_or_none(User.id == user_id)
     if not user:
