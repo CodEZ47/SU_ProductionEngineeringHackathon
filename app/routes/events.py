@@ -21,61 +21,58 @@ def sync_event_id_sequence():
 @events_bp.route("/events", methods=["GET"])
 def list_events():
     event_type = request.args.get("event_type")
-    user_id = request.args.get("user_id")
-    url_id = request.args.get("url_id")
-
-    page_str = request.args.get("page")
-    per_page_str = request.args.get("per_page")
+    user_id_arg = request.args.get("user_id")
+    url_id_arg = request.args.get("url_id")
+    page_arg = request.args.get("page")
+    per_page_arg = request.args.get("per_page")
 
     query = Event.select()
 
     if event_type:
         query = query.where(Event.event_type == event_type)
 
-    if user_id is not None:
+    if user_id_arg is not None:
         try:
-            query = query.where(Event.user_id == int(user_id))
-        except ValueError:
+            query = query.where(Event.user_id == int(user_id_arg))
+        except (ValueError, TypeError):
             return jsonify({"error": "user_id must be an integer"}), 400
 
-    if url_id is not None:
+    if url_id_arg is not None:
         try:
-            query = query.where(Event.url_id == int(url_id))
-        except ValueError:
+            query = query.where(Event.url_id == int(url_id_arg))
+        except (ValueError, TypeError):
             return jsonify({"error": "url_id must be an integer"}), 400
 
     total = query.count()
     query = query.order_by(Event.timestamp.desc())
 
-    page = None
-    per_page = None
-    if page_str is not None or per_page_str is not None:
-        try:
-            page = int(page_str) if page_str else 1
-            per_page = int(per_page_str) if per_page_str else 10
-        except ValueError:
-            return jsonify({"error": "page and per_page must be integers"}), 400
+    try:
+        page = int(page_arg) if page_arg else 1
+        per_page = int(per_page_arg) if per_page_arg else 10
+    except ValueError:
+        return jsonify({"error": "page and per_page must be integers"}), 400
 
-        if page < 1 or per_page < 1 or per_page > 100:
-            return jsonify({"error": "Invalid pagination parameters"}), 400
-        query = query.paginate(page, per_page)
+    if page < 1 or per_page < 1 or per_page > 100:
+        return jsonify({"error": "Invalid pagination parameters"}), 400
+
+    query = query.paginate(page, per_page)
 
     result = []
     for event in query:
-        details = None
+        details = {}
         if event.details:
             try:
-                details = json.loads(event.details)
+                details = json.loads(event.details) if isinstance(event.details, str) else event.details
             except:
-                details = event.details
+                details = {}
 
         result.append({
             "id": event.id,
             "event_type": event.event_type,
-            "timestamp": event.timestamp.isoformat(),
+            "timestamp": event.timestamp.isoformat() if hasattr(event.timestamp, 'isoformat') else str(event.timestamp),
             "url_id": event.url_id,
             "user_id": event.user_id,
-            "details": details
+            "details": details if isinstance(details, dict) else {}
         })
 
     return jsonify({
@@ -119,20 +116,23 @@ def create_event():
 
     try:
         sync_event_id_sequence()
+
+        db_details = json.dumps(details if details is not None else {})
+
         event = Event.create(
             event_type=event_type,
             url=url,
             user=user,
-            details=json.dumps(details) if isinstance(details, dict) else None
+            details=db_details
         )
 
         return jsonify({
             "id": event.id,
             "event_type": event.event_type,
-            "timestamp": event.timestamp.isoformat(),
+            "timestamp": event.timestamp.isoformat() if hasattr(event.timestamp, 'isoformat') else str(event.timestamp),
             "url_id": event.url_id,
             "user_id": event.user_id,
-            "details": details
+            "details": details if details is not None else {}
         }), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
