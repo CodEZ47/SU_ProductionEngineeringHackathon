@@ -227,26 +227,26 @@ def delete_url(id):
     if not url:
         return jsonify({"error": "URL not found"}), 404
 
-    now = datetime.utcnow()
-
+    now = datetime.now()
 
     try:
         Event.create(
+            id=next_event_id(),
             url=url,
             user=url.user,
             event_type="deleted",
             timestamp=now,
             details=json.dumps({
                 "short_code": url.short_code,
-                "original_url": url.original_url
+                "original_url": url.original_url,
+                "reason": "user_requested"
             })
         )
     except Exception as e:
-        print("Event logging failed:", e)
+        print(f"Failed to log delete event: {e}")
 
 
     Event.delete().where(Event.url_id == id).execute()
-
     url.delete_instance()
 
     return "", 204
