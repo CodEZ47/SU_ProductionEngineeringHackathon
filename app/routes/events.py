@@ -85,14 +85,12 @@ def list_events():
 
     return jsonify({"events": result, "total": total, "page": page, "per_page": per_page}), 200
 
+
 @events_bp.route("/events", methods=["POST"])
 def create_event():
-    data = request.get_json(silent=True) #error is handled by custom handler
+    data = request.get_json(silent=True)
 
-    if not data or data is None:
-        return jsonify({"error": "Invalid JSON"}), 400
-
-    if not isinstance(data, dict):
+    if not data or not isinstance(data, dict):
         return jsonify({"error": "Request body must be a JSON object"}), 400
 
     event_type = data.get("event_type")
@@ -117,16 +115,26 @@ def create_event():
     if not user or not url:
         return jsonify({"error": "User or URL not found"}), 404
 
+    details_json = json.dumps(details) if details else None
+
+    duplicate = Event.get_or_none(
+        (Event.user == user) &
+        (Event.url == url) &
+        (Event.event_type == event_type) &
+        (Event.details == details_json)
+    )
+
+    if duplicate:
+        return jsonify({"error": "Duplicate event detected"}), 409
+
     try:
         sync_event_id_sequence()
         event = Event.create(
             event_type=event_type,
             url=url,
             user=user,
-            details=json.dumps(details) if details else None
+            details=details_json
         )
-
-        event.save()
 
         return jsonify({
             "id": event.id,
