@@ -165,12 +165,15 @@ def update_url(id):
 
 
 
+
 @url_bp.route("/urls/<int:id>", methods=["DELETE"])
 def delete_url(id):
     url = URL.get_or_none(URL.id == id)
 
     if not url:
         return jsonify({"error": "URL not found"}), 404
+
+    Event.delete().where(Event.url == url).execute()
 
     url.delete_instance()
 
