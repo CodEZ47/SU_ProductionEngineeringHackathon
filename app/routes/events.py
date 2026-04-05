@@ -10,11 +10,12 @@ events_bp = Blueprint("events", __name__)
 
 # auto grader sequence reseter for event id after seeding
 def sync_event_id_sequence():
+    # Get the sequence name dynamically
     db.execute_sql("""
         SELECT setval(
-            pg_get_serial_sequence('"event"', 'id'),
-            COALESCE((SELECT MAX(id) FROM "event"), 1),
-            true
+            pg_get_serial_sequence('event', 'id'),
+            COALESCE((SELECT MAX(id) FROM event), 0) + 1,
+            false
         );
     """)
 
