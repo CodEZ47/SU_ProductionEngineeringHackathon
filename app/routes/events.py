@@ -40,7 +40,10 @@ def list_events():
     page = request.args.get("page")
     per_page = request.args.get("per_page")
 
-    query = Event.select()
+    query = (Event
+             .select(Event, URL)
+             .join(URL)
+             .where(URL.is_active == True))
 
     if event_type:
         query = query.where(Event.event_type == event_type)
@@ -87,9 +90,12 @@ def list_events():
             for event in events:
                 details = None
                 if event.details:
-                    try:
-                        details = json.loads(event.details)
-                    except (json.JSONDecodeError, TypeError):
+                    if isinstance(event.details, str):
+                        try:
+                            details = json.loads(event.details)
+                        except (json.JSONDecodeError, TypeError):
+                            details = event.details
+                    else:
                         details = event.details
                 result.append({
                     "id": event.id,
@@ -107,9 +113,12 @@ def list_events():
         for event in events:
             details = None
             if event.details:
-                try:
-                    details = json.loads(event.details)
-                except (json.JSONDecodeError, TypeError):
+                if isinstance(event.details, str):
+                    try:
+                        details = json.loads(event.details)
+                    except (json.JSONDecodeError, TypeError):
+                        details = event.details
+                else:
                     details = event.details
             result.append({
                 "id": event.id,
@@ -173,13 +182,15 @@ def create_event():
             details=details
         )
 
+        response_details = details if details is not None else None
+
         return jsonify({
             "id": event.id,
             "event_type": event.event_type,
             "timestamp": event.timestamp.isoformat(),
             "url_id": event.url_id,
             "user_id": event.user_id,
-            "details": details
+            "details": response_details
         }), 201
 
     except Exception as e:
