@@ -1,10 +1,8 @@
 import csv
 import io
 import re
-
 from flask import Blueprint, request, jsonify
 from peewee import IntegrityError, chunked
-
 from app.models.user import User
 from app.database import db
 
@@ -31,7 +29,7 @@ def check_input_validity(username, email):
             "details": "Must be a valid email format"
         }), 422
 
-    return
+    return None
 
 
 @users_bp.route("/users/bulk", methods=["POST"])
@@ -40,25 +38,65 @@ def import_users_bulk():
         return jsonify({"error": "file is required"}), 400
 
     file = request.files["file"]
-    if not file.filename.endswith(".csv"):
-        return jsonify({"error": "file must be a CSV"}), 400
 
-    stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
-    reader = csv.DictReader(stream)
+    if not file or file.filename == "":
+        return jsonify({"error": "No file uploaded"}), 400
 
-    users_to_insert = []
-    for row in reader:
-        users_to_insert.append({
-            "username": row["username"],
-            "email": row["email"],
-            "created_at": row.get("created_at")
-        })
+    try:
+        file_content = file.stream.read().decode("utf-8")
+        reader = csv.DictReader(io.StringIO(file_content))
 
-    with db.atomic():
-        for batch in chunked(users_to_insert, 100):
-            User.insert_many(batch).execute()
+        rows_to_insert = []
+        seen_emails = set()
 
-    return jsonify({"message": f"Successfully imported {len(users_to_insert)} users"}), 201
+        existing_users = list(User.select(User.username, User.email).dicts())
+        existing_emails = {u["email"] for u in existing_users}
+
+        for row in reader:
+            username = row["username"].strip()
+            email = row["email"].strip().lower()
+
+            if not username or not email:
+                continue
+
+            if (
+                    email in existing_emails
+                    or email in seen_emails
+            ):
+                continue
+
+            invalid = check_input_validity(username=username, email=email)
+            if invalid:
+                continue
+
+            rows_to_insert.append({
+                "username": username,
+                "email": email,
+            })
+
+            seen_emails.add(email)
+
+        if not rows_to_insert:
+            return jsonify({
+                "message": "No users imported",
+                "imported": 0,
+                "row_count": 0
+            }), 201
+
+        with db.atomic():
+            for batch in chunked(rows_to_insert, 100):
+                User.insert_many(batch).execute()
+
+        users_imported = len(rows_to_insert)
+
+        return jsonify({
+            "message": f"Successfully imported {users_imported} users",
+            "imported": users_imported,
+            "row_count": users_imported
+        }), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @users_bp.route("/users", methods=["POST"])
@@ -96,6 +134,8 @@ def list_users():
 
     query = User.select().order_by(User.id)
 
+    total = query.count()
+
     if page is not None and per_page is not None:
         try:
             page = int(page)
@@ -116,10 +156,14 @@ def list_users():
             "created_at": user.created_at.isoformat()
         })
 
-
     return jsonify({
         "kind": "list",
-        "sample": results
+        "sample": results,
+        "metadata": {
+            "total": total,
+            "page": int(page) if page else None,
+            "per_page": int(per_page) if per_page else None
+        }
     }), 200
 
 
