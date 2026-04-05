@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, redirect
+from flask import Blueprint, request, jsonify, redirect, Response
 from datetime import datetime
 import json
 
@@ -188,4 +188,6 @@ def redirect_short_code(short_code):
     if not url or not url.is_active:
         return jsonify({"error": "URL not found or inactive"}), 404
 
-    return redirect(url.original_url, code=302)
+    return Response(status=302, headers={
+        "Location": url.original_url
+    })
