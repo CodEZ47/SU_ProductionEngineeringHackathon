@@ -13,7 +13,7 @@ class BaseModel(Model):
 def init_db(app):
     database = PostgresqlDatabase(
         os.environ.get("DATABASE_NAME", "hackathon_db"),
-        host=os.environ.get("DATABASE_HOST", "localhost"),
+        host=os.environ.get("DATABASE_HOST", "db"),
         port=int(os.environ.get("DATABASE_PORT", 5432)),
         user=os.environ.get("DATABASE_USER", "postgres"),
         password=os.environ.get("DATABASE_PASSWORD", "postgres"),
