@@ -4,6 +4,7 @@ from app.models.event import Event
 from app.models.url import URL
 from app.models.user import User
 from app.database import db
+from datetime import datetime
 
 events_bp = Blueprint("events", __name__)
 
@@ -44,18 +45,21 @@ def list_events():
             return jsonify({"error": "url_id must be an integer"}), 400
 
     total = query.count()
-    query = query.order_by(Event.timestamp.desc())
+    query = query.order_by(Event.timestamp.desc(), Event.id.desc())
 
-    try:
-        page = int(page_arg) if page_arg else 1
-        per_page = int(per_page_arg) if per_page_arg else 10
-    except ValueError:
-        return jsonify({"error": "page and per_page must be integers"}), 400
+    page = None
+    per_page = None
 
-    if page < 1 or per_page < 1 or per_page > 100:
-        return jsonify({"error": "Invalid pagination parameters"}), 400
+    if page_arg is not None or per_page_arg is not None:
+        try:
+            page = int(page_arg) if page_arg else 1
+            per_page = int(per_page_arg) if per_page_arg else 10
+        except ValueError:
+            return jsonify({"error": "page and per_page must be integers"}), 400
 
-    query = query.paginate(page, per_page)
+        if page < 1 or per_page < 1 or per_page > 100:
+            return jsonify({"error": "Invalid pagination parameters"}), 400
+        query = query.paginate(page, per_page)
 
     result = []
     for event in query:
@@ -69,7 +73,7 @@ def list_events():
         result.append({
             "id": event.id,
             "event_type": event.event_type,
-            "timestamp": event.timestamp.isoformat() if hasattr(event.timestamp, 'isoformat') else str(event.timestamp),
+            "timestamp": event.timestamp.strftime("%Y-%m-%dT%H:%M:%S"),
             "url_id": event.url_id,
             "user_id": event.user_id,
             "details": details if isinstance(details, dict) else {}
@@ -90,8 +94,7 @@ def create_event():
     if data is None or not isinstance(data, dict):
         return jsonify({"error": "Request body must be a JSON object"}), 400
 
-    required = ["event_type", "url_id", "user_id"]
-    if not all(k in data for k in required):
+    if not all(k in data for k in ["event_type", "url_id", "user_id"]):
         return jsonify({"error": "Missing required fields"}), 400
 
     event_type = data.get("event_type")
@@ -103,7 +106,7 @@ def create_event():
         return jsonify({"error": "user_id and url_id must be integers"}), 400
 
     if not isinstance(event_type, str) or not event_type.strip():
-        return jsonify({"error": "event_type must be a non-empty string"}), 400
+        return jsonify({"error": "event_type must be a string"}), 400
 
     if details is not None and not isinstance(details, dict):
         return jsonify({"error": "Details must be a JSON object"}), 400
@@ -117,19 +120,20 @@ def create_event():
     try:
         sync_event_id_sequence()
 
-        db_details = json.dumps(details if details is not None else {})
+        now = datetime.now()
 
         event = Event.create(
             event_type=event_type,
             url=url,
             user=user,
-            details=db_details
+            timestamp=now,
+            details=json.dumps(details if details is not None else {})
         )
 
         return jsonify({
             "id": event.id,
             "event_type": event.event_type,
-            "timestamp": event.timestamp.isoformat() if hasattr(event.timestamp, 'isoformat') else str(event.timestamp),
+            "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S"),
             "url_id": event.url_id,
             "user_id": event.user_id,
             "details": details if details is not None else {}
