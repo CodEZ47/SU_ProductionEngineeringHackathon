@@ -37,14 +37,16 @@ def init_db(app):
     from app.models.url import URL
     from app.models.event import Event
 
-    connect_with_retry(db)
+    # connect_with_retry(db)
+    db.connect(reuse_if_open=True)
     db.create_tables([User, URL, Event], safe=True)
     db.close()
 
     @app.before_request
     def _db_connect():
         if db.is_closed():
-            connect_with_retry(db)
+            # connect_with_retry(db)
+            db.connect(reuse_if_open=True)
 
     @app.teardown_appcontext
     def _db_close(exc):
