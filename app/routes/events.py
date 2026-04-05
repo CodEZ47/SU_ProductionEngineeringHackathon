@@ -10,7 +10,7 @@ from app.database import db
 events_bp = Blueprint("events", __name__)
 
 
-#auto grader sequence reseter for event id after seeding
+# auto grader sequence reseter for event id after seeding
 def sync_event_id_sequence():
     db.execute_sql("""
         SELECT setval(
@@ -19,6 +19,7 @@ def sync_event_id_sequence():
             true
         );
     """)
+
 
 def create_event_record(event_type, url, user, details=None):
     if details is not None and not isinstance(details, dict):
@@ -34,6 +35,7 @@ def create_event_record(event_type, url, user, details=None):
     )
     return event
 
+
 @events_bp.route("/events", methods=["GET"])
 def list_events():
     event_type = request.args.get("event_type")
@@ -43,9 +45,15 @@ def list_events():
     page = request.args.get("page")
     per_page = request.args.get("per_page")
 
+
+    if (page is None) != (per_page is None):
+        return jsonify({"error": "Both page and per_page are required"}), 400
+
     query = Event.select()
+
     if event_type:
         query = query.where(Event.event_type == event_type)
+
     if user_id is not None:
         try:
             user_id = int(user_id)
@@ -60,7 +68,6 @@ def list_events():
             return jsonify({"error": "url_id must be an integer"}), 400
         query = query.where(Event.url_id == url_id)
 
-
     query = query.order_by(Event.timestamp.desc())
     total = query.count()
 
@@ -73,13 +80,12 @@ def list_events():
 
         if page < 1 or per_page < 1 or per_page > 100:
             return jsonify({"error": "Invalid pagination parameters"}), 400
-        query = query.paginate(page, per_page)
 
+        query = query.paginate(page, per_page)
 
     events = query
 
     result = []
-
     for event in events:
         details = None
         if event.details:
@@ -97,13 +103,24 @@ def list_events():
             "details": details
         })
 
-    return jsonify({"events": result, "total": total, "page": page, "per_page": per_page}), 200
+
+    response = {
+        "events": result,
+        "total": total
+    }
+
+    if page is not None and per_page is not None:
+        response["page"] = page
+        response["per_page"] = per_page
+
+    return jsonify(response), 200
+
 
 @events_bp.route("/events", methods=["POST"])
 def create_event():
-    data = request.get_json(silent=True) #error is handled by custom handler
+    data = request.get_json(silent=True)
 
-    if not data or data is None:
+    if not data:
         return jsonify({"error": "Invalid JSON"}), 400
 
     if not isinstance(data, dict):
@@ -117,17 +134,21 @@ def create_event():
     if event_type is None or url_id is None or user_id is None:
         return jsonify({"error": "Missing required fields"}), 400
 
-    if not isinstance(user_id, int) or not isinstance(url_id, int):
-        return jsonify({"error": "user_id and url_id must be integers"}), 400
-
     if not isinstance(event_type, str):
         return jsonify({"error": "event_type must be a string"}), 400
+
+    try:
+        user_id = int(user_id)
+        url_id = int(url_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "user_id and url_id must be integers"}), 400
 
     if details is not None and not isinstance(details, dict):
         return jsonify({"error": "Details must be a JSON object"}), 400
 
     user = User.get_or_none(User.id == user_id)
     url = URL.get_or_none(URL.id == url_id)
+
     if not user or not url:
         return jsonify({"error": "User or URL not found"}), 404
 
@@ -139,8 +160,6 @@ def create_event():
             details=details
         )
 
-        event.save()
-
         return jsonify({
             "id": event.id,
             "event_type": event.event_type,
@@ -149,5 +168,7 @@ def create_event():
             "user_id": event.user_id,
             "details": details
         }), 201
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
