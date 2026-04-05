@@ -10,7 +10,6 @@ events_bp = Blueprint("events", __name__)
 
 # auto grader sequence reseter for event id after seeding
 def sync_event_id_sequence():
-    # Get the sequence name dynamically
     db.execute_sql("""
         SELECT setval(
             pg_get_serial_sequence('event', 'id'),
@@ -159,10 +158,12 @@ def create_event():
         return jsonify({"error": "Details must be a JSON object"}), 400
 
     user = User.get_or_none(User.id == user_id)
-    url = URL.get_or_none(URL.id == url_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
-    if not user or not url:
-        return jsonify({"error": "User or URL not found"}), 404
+    url = URL.get_or_none((URL.id == url_id) & (URL.is_active == True))
+    if not url:
+        return jsonify({"error": "URL not found or inactive"}), 404
 
     try:
         event = create_event_record(
