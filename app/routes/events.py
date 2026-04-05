@@ -32,19 +32,25 @@ def list_events():
     user_id = request.args.get("user_id")
     url_id = request.args.get("url_id")
 
-    # FIX FOR #2: Unfiltered select to see all history (Unseen Observer)
+    # FIX FOR #2: Select all events (no JOIN/is_active filter)
     query = Event.select().order_by(Event.id)
 
     if event_type:
         query = query.where(Event.event_type == event_type)
+
     if user_id:
+        # Error Code Fix: Return 404 if the filtered resource doesn't exist
+        if not User.get_or_none(User.id == user_id):
+            return jsonify({"error": "User not found"}), 404
         query = query.where(Event.user_id == int(user_id))
+
     if url_id:
+        # Error Code Fix: Return 404 if the filtered resource doesn't exist
+        if not URL.get_or_none(URL.id == url_id):
+            return jsonify({"error": "URL not found"}), 404
         query = query.where(Event.url_id == int(url_id))
 
     total = query.count()
-
-    # Cast pagination to match users.py metadata style
     p_int = int(page) if page else None
     pp_int = int(per_page) if per_page else None
 
@@ -55,16 +61,10 @@ def list_events():
 
     results = []
     for event in query:
-        # Use str() if isoformat() fails to ensure full precision from the DB is kept
-        try:
-            ts = event.timestamp.isoformat()
-        except AttributeError:
-            ts = str(event.timestamp)
-
         results.append({
             "id": event.id,
             "event_type": event.event_type,
-            "timestamp": ts,
+            "timestamp": event.timestamp.isoformat(),
             "url_id": event.url_id,
             "user_id": event.user_id,
             "details": format_details(event.details)
@@ -99,13 +99,16 @@ def create_event():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Keep URL active check for POST only
-    url = URL.get_or_none((URL.id == url_id) & (URL.is_active == True))
+    url = URL.get_or_none(URL.id == url_id)
     if not url:
-        return jsonify({"error": "URL not found or inactive"}), 404
+        return jsonify({"error": "URL not found"}), 404
+
+    # Challenge #2/4: POST requires active URL, return 404 for inactive ones
+    if not url.is_active:
+        return jsonify({"error": "URL is inactive"}), 404
 
     try:
-        # Challenge #6: Preserve original detail type via json.dumps
+        # Challenge #6: Use json.dumps to support non-dict types (strings/ints)
         db_details = json.dumps(details) if details is not None else None
 
         event = Event.create(
@@ -116,15 +119,10 @@ def create_event():
             details=db_details
         )
 
-        try:
-            ts = event.timestamp.isoformat()
-        except AttributeError:
-            ts = str(event.timestamp)
-
         return jsonify({
             "id": event.id,
             "event_type": event.event_type,
-            "timestamp": ts,
+            "timestamp": event.timestamp.isoformat(),
             "url_id": event.url_id,
             "user_id": event.user_id,
             "details": format_details(event.details)
