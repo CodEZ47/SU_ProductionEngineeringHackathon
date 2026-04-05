@@ -21,24 +21,6 @@ def sync_event_id_sequence():
 
 
 def create_event_record(event_type, url, user, details=None):
-    if details is None:
-        details = {}
-
-    if not isinstance(details, dict):
-        raise ValueError("Details must be a JSON object")
-
-    sync_event_id_sequence()
-
-    event = Event.create(
-        event_type=event_type,
-        url=url,
-        user=user,
-        details=json.dumps(details)
-    )
-    return event
-
-
-def create_event_record(event_type, url, user, details=None):
     if details is not None and not isinstance(details, dict):
         raise ValueError("Details must be a JSON object")
 
@@ -52,6 +34,7 @@ def create_event_record(event_type, url, user, details=None):
     )
     return event
 
+
 @events_bp.route("/events", methods=["GET"])
 def list_events():
     event_type = request.args.get("event_type")
@@ -62,10 +45,8 @@ def list_events():
 
     query = Event.select()
 
-
     if event_type:
         query = query.where(Event.event_type == event_type)
-
 
     if user_id is not None:
         try:
@@ -88,8 +69,6 @@ def list_events():
 
     if (page is None) != (per_page is None):
         return jsonify({"error": "page and per_page must be provided together"}), 400
-
-    use_pagination = page is not None and per_page is not None
 
     if page is not None and per_page is not None:
         try:
@@ -125,13 +104,14 @@ def list_events():
         })
 
     response = {
+        "kind": "list",
+        "sample": result,
+        "total_items": total,
+        "page": page if paginated else None,
+        "per_page": per_page if paginated else None,
+        "total": total,
         "events": result,
-        "total": total
     }
-
-    if paginated:
-        response["page"] = page
-        response["per_page"] = per_page
 
     return jsonify(response), 200
 
@@ -140,11 +120,9 @@ def list_events():
 def create_event():
     data = request.get_json(silent=True)
 
-    # Invalid JSON / no JSON body
     if data is None:
         return jsonify({"error": "Invalid JSON"}), 400
 
-    # JSON exists but must be an object
     if not isinstance(data, dict):
         return jsonify({"error": "Request body must be a JSON object"}), 400
 
@@ -170,8 +148,6 @@ def create_event():
 
     if not user or not url:
         return jsonify({"error": "User or URL not found"}), 404
-    if not url:
-        return jsonify({"error": f"URL with id {url_id} not found"}), 404
 
     try:
         event = create_event_record(
