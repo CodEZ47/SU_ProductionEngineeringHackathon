@@ -87,39 +87,25 @@ def list_events():
 @events_bp.route("/events", methods=["POST"])
 def create_event():
     data = request.get_json(silent=True)
-    if not data or data is None:
+    if not data:
         return jsonify({"error": "Invalid JSON"}), 400
-    if not isinstance(data, dict):
-        return jsonify({"error": "Request body must be a JSON object"}), 400
 
     event_type = data.get("event_type")
     url_id = data.get("url_id")
     user_id = data.get("user_id")
     details = data.get("details")
 
-    ALLOWED_TYPES = {"created", "clicked", "deleted", "updated"}
+    ALLOWED_TYPES = {"created", "clicked", "deleted", "updated", "click"}
     if event_type not in ALLOWED_TYPES:
         return jsonify({"error": "Invalid event type"}), 422
 
     if event_type is None or url_id is None or user_id is None:
         return jsonify({"error": "Missing required fields"}), 400
-    if not isinstance(user_id, int) or not isinstance(url_id, int):
-        return jsonify({"error": "user_id and url_id must be integers"}), 400
-    if not isinstance(event_type, str):
-        return jsonify({"error": "event_type must be a string"}), 400
-    if details is not None and not isinstance(details, dict):
-        return jsonify({"error": "Details must be a JSON object"}), 400
 
     user = User.get_or_none(User.id == user_id)
     url = URL.get_or_none(URL.id == url_id)
     if not user or not url:
         return jsonify({"error": "User or URL not found"}), 404
-
-    if not details:
-        details = {
-            "short_code": url.short_code,
-            "original_url": url.original_url
-        }
 
     try:
         sync_event_id_sequence()
@@ -127,10 +113,8 @@ def create_event():
             event_type=event_type,
             url=url,
             user=user,
-            details=json.dumps(details)
+            details=json.dumps(details) if details else None
         )
-
-        #event.save()
 
         return jsonify({
             "id": event.id,
