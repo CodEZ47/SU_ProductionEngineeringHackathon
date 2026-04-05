@@ -22,7 +22,7 @@ def sync_event_id_sequence():
 def create_event_record(event_type, url, user, details=None):
     if details is not None and not isinstance(details, dict):
         raise ValueError("Details must be a JSON object")
-
+    sync_event_id_sequence()
     event = Event.create(
         event_type=event_type,
         url=url,
@@ -145,40 +145,23 @@ def create_event():
     user_id = data.get("user_id")
     details = data.get("details")
 
-    if event_type is None:
-        return jsonify({"error": "event_type is required"}), 400
-    if url_id is None:
-        return jsonify({"error": "url_id is required"}), 400
-    if user_id is None:
-        return jsonify({"error": "user_id is required"}), 400
+    if event_type is None or url_id is None or user_id is None:
+        return jsonify({"error": "Missing required fields"}), 400
 
-    if not isinstance(user_id, int):
-        return jsonify({"error": "user_id must be an integer"}), 400
-    if not isinstance(url_id, int):
-        return jsonify({"error": "url_id must be an integer"}), 400
+    if not isinstance(user_id, int) or not isinstance(url_id, int):
+        return jsonify({"error": "user_id and url_id must be integers"}), 400
+
     if not isinstance(event_type, str):
         return jsonify({"error": "event_type must be a string"}), 400
 
-    if user_id <= 0:
-        return jsonify({"error": "user_id must be a positive integer"}), 400
-    if url_id <= 0:
-        return jsonify({"error": "url_id must be a positive integer"}), 400
-
-    if details is not None:
-        if not isinstance(details, dict):
-            return jsonify({"error": "Details must be a JSON object"}), 400
-        try:
-            json.dumps(details)
-        except (TypeError, ValueError):
-            return jsonify({"error": "Details contains non-serializable data"}), 400
+    if details is not None and not isinstance(details, dict):
+        return jsonify({"error": "Details must be a JSON object"}), 400
 
     user = User.get_or_none(User.id == user_id)
-    if not user:
-        return jsonify({"error": f"User with id {user_id} not found"}), 404
-
     url = URL.get_or_none(URL.id == url_id)
-    if not url:
-        return jsonify({"error": f"URL with id {url_id} not found"}), 404
+
+    if not user or not url:
+        return jsonify({"error": "User or URL not found"}), 404
 
     try:
         event = create_event_record(
@@ -188,16 +171,14 @@ def create_event():
             details=details
         )
 
-        response_details = details if details is not None else None
-
         return jsonify({
             "id": event.id,
             "event_type": event.event_type,
             "timestamp": event.timestamp.isoformat(),
             "url_id": event.url_id,
             "user_id": event.user_id,
-            "details": response_details
+            "details": details
         }), 201
 
-    except Exception:
-        return jsonify({"error": "Failed to create event"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
