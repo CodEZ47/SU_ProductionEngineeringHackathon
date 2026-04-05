@@ -1,42 +1,12 @@
 from flask import Blueprint, request, jsonify, redirect
 from datetime import datetime
-import random
-import string
 import json
-from urllib.parse import urlparse
 
 from app.models.url import URL
 from app.models.user import User
 from app.models.event import Event
 
-url_bp = Blueprint("url", __name__)
-
-
-def generate_code(length=6):
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
-
-
-def generate_unique_code():
-    while True:
-        code = generate_code()
-        if not URL.select().where(URL.short_code == code).exists():
-            return code
-
-
-def is_valid_url(url):
-    if not isinstance(url, str):
-        return False
-
-    url = url.strip()
-
-    if not (url.startswith("http://") or url.startswith("https://")):
-        return False
-
-    try:
-        parsed = urlparse(url)
-        return bool(parsed.netloc and "." in parsed.netloc)
-    except:
-        return False
+url_bp = Blueprint("urls", __name__)
 
 
 def serialize_url(url):
@@ -47,12 +17,11 @@ def serialize_url(url):
         "original_url": url.original_url,
         "title": url.title,
         "is_active": url.is_active,
-        "created_at": url.created_at.isoformat(),
-        "updated_at": url.updated_at.isoformat(),
+        "created_at": url.created_at.isoformat() if url.created_at else None,
+        "updated_at": url.updated_at.isoformat() if url.updated_at else None,
     }
 
 
-# ------------------ CREATE ------------------
 
 @url_bp.route("/urls", methods=["POST"])
 def create_url():
@@ -82,9 +51,6 @@ def create_url():
     if original_url == "":
         return jsonify({"error": "original_url cannot be empty"}), 400
 
-    if not is_valid_url(original_url):
-        return jsonify({"error": "Invalid URL format"}), 400
-
     if len(original_url) > 2048:
         return jsonify({"error": "URL too long"}), 400
 
@@ -96,7 +62,14 @@ def create_url():
         return jsonify({"error": "User not found"}), 404
 
     now = datetime.utcnow()
-    code = generate_unique_code()
+
+    # simple short code generator (replace if needed)
+    import random, string
+    def generate_code(length=6):
+        chars = string.ascii_letters + string.digits
+        return ''.join(random.choice(chars) for _ in range(length))
+
+    code = generate_code()
 
     try:
         new_url = URL.create(
@@ -111,12 +84,11 @@ def create_url():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    # Event logging (non-blocking)
+    # Safe event logging
     try:
         Event.create(
-            id=new_url.id,
-            user=user,
             url=new_url,
+            user=user,
             event_type="created",
             timestamp=now,
             details=json.dumps({
@@ -130,26 +102,28 @@ def create_url():
     return jsonify(serialize_url(new_url)), 201
 
 
-# ------------------ LIST ------------------
-
 @url_bp.route("/urls", methods=["GET"])
-def list_urls():
-    user_id = request.args.get("user_id")
+def get_urls():
     query = URL.select()
 
-    if user_id is not None:
-        try:
-            user_id = int(user_id)
-        except ValueError:
-            return jsonify({"error": "user_id must be an integer"}), 400
-        query = query.where(URL.user == user_id)
+    user_id = request.args.get("user_id")
+    is_active = request.args.get("is_active")
 
-    urls = [serialize_url(url) for url in query]
+    if user_id:
+        try:
+            query = query.where(URL.user == int(user_id))
+        except:
+            return jsonify({"error": "Invalid user_id"}), 400
+
+    if is_active is not None:
+        is_active_bool = is_active.lower() == "true"
+        query = query.where(URL.is_active == is_active_bool)
+
+    urls = [serialize_url(u) for u in query]
 
     return jsonify(urls), 200
 
 
-# ------------------ GET BY ID ------------------
 
 @url_bp.route("/urls/<int:id>", methods=["GET"])
 def get_url_by_id(id):
@@ -161,7 +135,6 @@ def get_url_by_id(id):
     return jsonify(serialize_url(url)), 200
 
 
-# ------------------ UPDATE ------------------
 
 @url_bp.route("/urls/<int:id>", methods=["PUT"])
 def update_url(id):
@@ -178,8 +151,6 @@ def update_url(id):
     if "title" in data:
         if not isinstance(data["title"], str):
             return jsonify({"error": "title must be a string"}), 400
-        if len(data["title"]) > 255:
-            return jsonify({"error": "title too long"}), 400
         url.title = data["title"]
 
     if "is_active" in data:
@@ -191,3 +162,27 @@ def update_url(id):
     url.save()
 
     return jsonify(serialize_url(url)), 200
+
+
+
+@url_bp.route("/urls/<int:id>", methods=["DELETE"])
+def delete_url(id):
+    url = URL.get_or_none(URL.id == id)
+
+    if not url:
+        return jsonify({"error": "URL not found"}), 404
+
+    url.delete_instance()
+
+    return "", 204
+
+
+
+@url_bp.route("/<string:short_code>", methods=["GET"])
+def redirect_short_code(short_code):
+    url = URL.get_or_none(URL.short_code == short_code)
+
+    if not url or not url.is_active:
+        return jsonify({"error": "URL not found or inactive"}), 404
+
+    return redirect(url.original_url, code=302)
