@@ -1,7 +1,10 @@
 import json
 
 from flask import Blueprint, jsonify, request
+
 from app.models.event import Event
+from app.models.url import URL
+from app.models.user import User
 
 events_bp = Blueprint("events", __name__)
 
@@ -67,8 +70,7 @@ def list_events():
             "details": details
         })
 
-    return jsonify(result), 200
-
+    return jsonify({"events": result, "total": query.count(), "page": page, "per_page": per_page}), 200
 
 @events_bp.route("/events", methods=["POST"])
 def create_event():
@@ -85,9 +87,17 @@ def create_event():
     user_id = data.get("user_id")
     details = data.get("details")
 
-    if not event_type or not url_id or not user_id:
+    if not all([event_type, url_id, user_id]):
         return jsonify({"error": "Missing required fields"}), 400
-
+    
+    if details is not None and not isinstance(details, dict):
+        return jsonify({"error": "Details must be a JSON object"}), 400
+    
+    user = User.get_or_none(User.id == user_id)
+    url = URL.get_or_none(URL.id == url_id)
+    if not user or not url:
+        return jsonify({"error": "User or URL not found"}), 404
+    
     try:
         event = Event.create(
             event_type=event_type,
