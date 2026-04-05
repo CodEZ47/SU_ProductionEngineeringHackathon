@@ -1,6 +1,8 @@
 from flask import Blueprint, request, jsonify, redirect
 from datetime import datetime
 import json
+import random
+import string
 
 from app.models.url import URL
 from app.models.user import User
@@ -20,6 +22,15 @@ def serialize_url(url):
         "created_at": url.created_at.isoformat() if url.created_at else None,
         "updated_at": url.updated_at.isoformat() if url.updated_at else None,
     }
+
+
+def generate_unique_code(length=6):
+    chars = string.ascii_letters + string.digits
+
+    while True:
+        code = ''.join(random.choice(chars) for _ in range(length))
+        if not URL.get_or_none(URL.short_code == code):
+            return code
 
 
 
@@ -62,14 +73,7 @@ def create_url():
         return jsonify({"error": "User not found"}), 404
 
     now = datetime.utcnow()
-
-    # simple short code generator (replace if needed)
-    import random, string
-    def generate_code(length=6):
-        chars = string.ascii_letters + string.digits
-        return ''.join(random.choice(chars) for _ in range(length))
-
-    code = generate_code()
+    code = generate_unique_code()
 
     try:
         new_url = URL.create(
@@ -84,7 +88,7 @@ def create_url():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    # Safe event logging
+    # Event logging
     try:
         Event.create(
             url=new_url,
@@ -99,7 +103,11 @@ def create_url():
     except Exception as e:
         print("Event logging failed:", e)
 
-    return jsonify(serialize_url(new_url)), 201
+
+    response = jsonify(serialize_url(new_url))
+    response.status_code = 201
+    response.headers["Location"] = f"/urls/{new_url.id}"
+    return response
 
 
 @url_bp.route("/urls", methods=["GET"])
@@ -116,13 +124,14 @@ def get_urls():
             return jsonify({"error": "Invalid user_id"}), 400
 
     if is_active is not None:
+        if is_active.lower() not in ["true", "false"]:
+            return jsonify({"error": "is_active must be true or false"}), 400
+
         is_active_bool = is_active.lower() == "true"
         query = query.where(URL.is_active == is_active_bool)
 
     urls = [serialize_url(u) for u in query]
-
     return jsonify(urls), 200
-
 
 
 @url_bp.route("/urls/<int:id>", methods=["GET"])
@@ -133,7 +142,6 @@ def get_url_by_id(id):
         return jsonify({"error": "URL not found"}), 404
 
     return jsonify(serialize_url(url)), 200
-
 
 
 @url_bp.route("/urls/<int:id>", methods=["PUT"])
@@ -164,8 +172,6 @@ def update_url(id):
     return jsonify(serialize_url(url)), 200
 
 
-
-
 @url_bp.route("/urls/<int:id>", methods=["DELETE"])
 def delete_url(id):
     url = URL.get_or_none(URL.id == id)
@@ -173,11 +179,12 @@ def delete_url(id):
     if not url:
         return jsonify({"error": "URL not found"}), 404
 
-    Event.delete().where(Event.url == url).execute()
+
+    Event.delete().where(Event.url_id == id).execute()
 
     url.delete_instance()
 
-    return "", 204
+    return jsonify({}), 204
 
 
 
