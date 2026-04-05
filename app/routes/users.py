@@ -10,16 +10,6 @@ from app.database import db
 
 users_bp = Blueprint("users", __name__)
 
-#auto grader sequence reseter for user id after seeding
-def sync_event_id_sequence():
-    db.execute_sql("""
-        SELECT setval(
-            pg_get_serial_sequence('"user"', 'id'),
-            COALESCE((SELECT MAX(id) FROM "user"), 1),
-            true
-        );
-    """)
-
 def check_input_validity(username, email):
     USERNAME_REGEX = r"^[a-zA-Z][a-zA-Z0-9_]{2,29}$"
     EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -63,7 +53,6 @@ def import_users_bulk():
 
         existing_users = list(User.select(User.username, User.email).dicts())
         existing_emails = {u["email"] for u in existing_users}
-        sync_event_id_sequence()
 
         for row in reader:
             username = row["username"].strip()
@@ -135,7 +124,6 @@ def create_user():
         return invalid
 
     try:
-        sync_event_id_sequence()
         user = User.create(username = username, email = email)
 
         return jsonify({
